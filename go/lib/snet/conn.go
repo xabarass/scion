@@ -85,8 +85,6 @@ type Conn struct {
 	scionNet *Network
 	// Key of last used path, used to select the same path for the next packet
 	prefPathKey spathmeta.PathKey
-	// Used for rate limiting SIBRA traffic
-	nextSendTime time.Time
 }
 
 // DialSCION calls DialSCION on the default networking context.
@@ -303,14 +301,16 @@ func (c *Conn) write(b []byte, raddr *Addr) (int, error) {
 			sibraRsrv := raddr.SibraResv.Load()
 			raddr.Sibra, usePath = sibraRsrv.GetExtn()
 			now := time.Now()
-			if now.Before(c.nextSendTime) {
-				time.Sleep(c.nextSendTime.Sub(now))
+			if now.Before(raddr.NextSendTime) {
+				c.writeMutex.Unlock()
+				time.Sleep(raddr.NextSendTime.Sub(now))
+				c.writeMutex.Lock()
 				now = time.Now()
 			}
 			if sibraRsrv.Ephemeral != nil && len(sibraRsrv.Ephemeral.ActiveBlocks) == 1 {
 				bwcls := sibra.BwCls(sibraRsrv.Ephemeral.ActiveBlocks[0].Info.BwCls)
 				nextSendTime := (len(b) * int(time.Second)) / int(bwcls.Bps())
-				c.nextSendTime = now.Add(time.Duration(nextSendTime))
+				raddr.NextSendTime = now.Add(time.Duration(nextSendTime))
 			}
 		}
 		if raddr.Sibra != nil && raddr.NextHopHost != nil && raddr.NextHopPort != 0 {

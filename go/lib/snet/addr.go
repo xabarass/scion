@@ -20,6 +20,7 @@ import (
 	"net"
 	"regexp"
 	"strconv"
+	"time"
 
 	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/common"
@@ -40,6 +41,7 @@ type Addr struct {
 	Path        *spath.Path
 	SibraResv   *syncresv.Store
 	Sibra       common.Extension
+	NextSendTime time.Time
 	NextHopHost addr.HostAddr
 	NextHopPort uint16
 }

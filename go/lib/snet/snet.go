@@ -207,8 +207,7 @@ func (n *Network) ListenSCIONWithBindSVC(network string, laddr, baddr *Addr,
 		scionNet:   n,
 		recvBuffer: make(common.RawBytes, BufSize),
 		sendBuffer: make(common.RawBytes, BufSize),
-		svc:        svc,
-		nextSendTime:time.Now()}
+		svc:        svc}
 
 	// Initialize local bind address
 	regAddr := &reliable.AppAddr{}
