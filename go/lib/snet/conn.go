@@ -15,6 +15,7 @@
 package snet
 
 import (
+	"github.com/scionproto/scion/go/lib/sibra"
 	"net"
 	"sync"
 	"time"
@@ -84,6 +85,8 @@ type Conn struct {
 	scionNet *Network
 	// Key of last used path, used to select the same path for the next packet
 	prefPathKey spathmeta.PathKey
+	// Used for rate limiting SIBRA traffic
+	nextSendTime time.Time
 }
 
 // DialSCION calls DialSCION on the default networking context.
@@ -297,7 +300,18 @@ func (c *Conn) write(b []byte, raddr *Addr) (int, error) {
 	// If src and dst are in the same AS, the path will be empty
 	if !c.laddr.IA.Eq(raddr.IA) {
 		if raddr.SibraResv != nil {
-			raddr.Sibra, usePath = raddr.SibraResv.Load().GetExtn()
+			sibraRsrv := raddr.SibraResv.Load()
+			raddr.Sibra, usePath = sibraRsrv.GetExtn()
+			now := time.Now()
+			if now.Before(c.nextSendTime) {
+				time.Sleep(c.nextSendTime.Sub(now))
+				now = time.Now()
+			}
+			if sibraRsrv.Ephemeral != nil && len(sibraRsrv.Ephemeral.ActiveBlocks) == 1 {
+				bwcls := sibra.BwCls(sibraRsrv.Ephemeral.ActiveBlocks[0].Info.BwCls)
+				nextSendTime := (len(b) * int(time.Second)) / int(bwcls.Bps())
+				c.nextSendTime = now.Add(time.Duration(nextSendTime))
+			}
 		}
 		if raddr.Sibra != nil && raddr.NextHopHost != nil && raddr.NextHopPort != 0 {
 			if usePath {
@@ -361,7 +375,6 @@ func (c *Conn) write(b []byte, raddr *Addr) (int, error) {
 		// Overlay next-hop is contained in path
 		appAddr = reliable.AppAddr{Addr: nextHopHost, Port: nextHopPort}
 	}
-
 	// Send message
 	n, err = c.conn.WriteTo(c.sendBuffer[:n], &appAddr)
 	if err != nil {
